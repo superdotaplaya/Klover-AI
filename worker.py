@@ -1536,6 +1536,7 @@ class WorkerApp:
                 text=True
             )
             commit = result.stdout.strip()
+
             print(f"[UPDATE] Current commit: {commit}")
             return commit
         except Exception as e:
@@ -1553,12 +1554,15 @@ class WorkerApp:
             print(result.stdout)
 
             print("[UPDATE] Restarting worker...")
-            python_exe = sys.executable.replace("\\", "/")
-            os.execv(python_exe, [python_exe] + sys.argv)
+
+            # Reuse the exact interpreter and exact arguments the user used
+            python = sys.executable
+            args = [python] + sys.argv
+
+            os.execv(python, args)
 
         except Exception as e:
-            python_exe = sys.executable
-            os.execv(python_exe, [python_exe] + sys.argv)
+            print(f"[UPDATE] Failed to update: {e}")
 
     # ---------------------------------------------------------
     # GPU CHECK
