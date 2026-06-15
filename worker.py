@@ -27,6 +27,7 @@ playwright_requests = Queue()
 playwright_results = {}
 
 print("IF YOU SEE THIS, IT UPDATED CORRECTLY")
+print("OK, THIS TIME IT ACTUALLY WORKED (hopefully!)")
 
 
 def playwright_resolver_loop():
