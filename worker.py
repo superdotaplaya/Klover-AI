@@ -26,6 +26,9 @@ import subprocess
 playwright_requests = Queue()
 playwright_results = {}
 
+
+
+
 def playwright_resolver_loop():
     """
     Runs in the main thread (or a dedicated daemon thread started from main),
@@ -61,18 +64,7 @@ def playwright_resolver_loop():
             playwright_requests.task_done()
 
 
-def get_current_commit():
-    try:
-        result = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
-            capture_output=True,
-            text=True
-        )
-        return result.stdout.strip()
-    except:
-        return "unknown"
-current_commit = get_current_commit()
-print(f"Current worker commit:  {current_commit}")
+
 # =========================
 # DATA CLASSES / CONFIG
 # =========================
@@ -1517,18 +1509,58 @@ class WorkerApp:
     def __init__(self, config: WorkerConfig):
         self.config_obj = config
         self.config = config.data
+
+        # Core components
         self.hash_db = HashDatabase(self.config.checkpoint_db, self.config.lora_db)
         self.downloader = CivitDownloader(self.config, self.hash_db, self)
         self.forge = ForgeClient(self.config, self.hash_db)
         self.uploader = ResultUploader(self.config)
         self.router = JobRouter(config.data, self.forge, self.uploader, self.hash_db)
 
+        # Auto-update: load commit at startup
+        self.current_commit = self.get_current_commit()
+
+        # Worker state
         self.worker_id: Optional[str] = None
         self.gpu_idle_timer = self.config.idle_time_setting
         self.worker_main_loop: Optional[Timer] = None
 
-    # ---------- GPU ----------
+    # ---------------------------------------------------------
+    # AUTO-UPDATE SUPPORT
+    # ---------------------------------------------------------
+    def get_current_commit(self):
+        try:
+            result = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                capture_output=True,
+                text=True
+            )
+            commit = result.stdout.strip()
+            print(f"[UPDATE] Current commit: {commit}")
+            return commit
+        except Exception as e:
+            print(f"[UPDATE] Failed to read commit: {e}")
+            return "unknown"
 
+    def update_and_restart(self):
+        try:
+            print("[UPDATE] Pulling latest code...")
+            result = subprocess.run(
+                ["git", "pull"],
+                capture_output=True,
+                text=True
+            )
+            print(result.stdout)
+
+            print("[UPDATE] Restarting worker...")
+            os.execv(sys.executable, [sys.executable] + sys.argv)
+
+        except Exception as e:
+            print(f"[UPDATE] Failed to update: {e}")
+
+    # ---------------------------------------------------------
+    # GPU CHECK
+    # ---------------------------------------------------------
     def is_gpu_idle(self, gpu_id: int, threshold: int = 10) -> bool:
         pynvml.nvmlInit()
         try:
@@ -1541,8 +1573,9 @@ class WorkerApp:
         finally:
             pynvml.nvmlShutdown()
 
-    # ---------- LOGIN ----------
-
+    # ---------------------------------------------------------
+    # LOGIN
+    # ---------------------------------------------------------
     def worker_login(self):
         print("🛜 Attempting to login...")
 
@@ -1554,12 +1587,10 @@ class WorkerApp:
 
         existing_id = self.config_obj.load_worker_id()
 
-        # -------------------------------
-        # Try existing worker ID first
-        # -------------------------------
+        # Try existing worker ID
         if existing_id:
             self.worker_id = existing_id
-            for _ in range(3):  # retry 3 times before giving up
+            for _ in range(3):
                 try:
                     resp = requests.post(
                         f"{self.config.server_url}/api/init",
@@ -1576,9 +1607,9 @@ class WorkerApp:
                         timeout=5,
                     )
 
-                    # Server explicitly says worker_id is invalid
                     if resp.status_code in (401, 403):
                         raise ValueError("Invalid worker ID")
+
                     resp.raise_for_status()
                     print("[AUTH] Worker authenticated successfully!")
                     return
@@ -1588,29 +1619,12 @@ class WorkerApp:
                     break
 
                 except Exception as e:
-                    print(f"[AUTH] Temporary failure: {e}, trying in 15 seconds...")
+                    print(f"[AUTH] Temporary failure: {e}, retrying...")
                     time.sleep(15)
 
-            print("[AUTH] Existing worker_id failed after retries — registering new one.")
+            print("[AUTH] Existing worker_id failed — registering new one.")
 
-        def update_and_restart(self):
-            try:
-                result = subprocess.run(
-                    ["git", "pull"],
-                    capture_output=True,
-                    text=True
-                )
-                print(result.stdout)
-
-                print("[UPDATE] Restarting worker...")
-                os.execv(sys.executable, [sys.executable] + sys.argv)
-
-            except Exception as e:
-                print(f"[UPDATE] Failed to update: {e}")
-
-        # -------------------------------
         # Register new worker
-        # -------------------------------
         while True:
             try:
                 resp = requests.post(
@@ -1636,22 +1650,20 @@ class WorkerApp:
                 return
 
             except Exception as e:
-                print(f"[AUTH] Failed to register worker: {e}. Retrying in 15 seconds...")
+                print(f"[AUTH] Failed to register worker: {e}. Retrying...")
                 time.sleep(15)
 
-    # ---------- JOB FETCHING ----------
-
+    # ---------------------------------------------------------
+    # JOB FETCHING
+    # ---------------------------------------------------------
     def get_job(self):
         if not self.worker_id:
             print("[JOB] No worker_id, skipping job fetch.")
             return
 
-        # ---------------------------------------------------------
-        # 1. Contact server
-        # ---------------------------------------------------------
         try:
             resp = requests.get(
-                f"{self.config.server_url}/api/get_job",
+                f"{self.config.server_url}/api/get-job",
                 params={
                     "worker_id": self.worker_id,
                     "commit": self.current_commit
@@ -1664,9 +1676,6 @@ class WorkerApp:
             self.worker_login()
             return
 
-        # ---------------------------------------------------------
-        # 2. Try to parse JSON safely
-        # ---------------------------------------------------------
         try:
             job = resp.json()
         except Exception:
@@ -1674,93 +1683,56 @@ class WorkerApp:
             time.sleep(2)
             return
 
-        # ---------------------------------------------------------
-        # 3. Server requests update
-        # ---------------------------------------------------------
+        # UPDATE SIGNAL
         if job.get("status") == "update":
-            print("[UPDATE] Server requested worker update. Pulling latest code...")
+            print("[UPDATE] Server requested worker update.")
             self.update_and_restart()
             return
 
-        # ---------------------------------------------------------
-        # 4. Authentication failure
-        # ---------------------------------------------------------
+        # AUTH FAILURE
         if resp.status_code == 401:
             print("[AUTH ERROR] Worker failed authentication")
             time.sleep(3)
             return
 
-        # ---------------------------------------------------------
-        # 5. Missing model
-        # ---------------------------------------------------------
+        # MODEL / LORA DOWNLOADS
         if resp.status_code == 201:
-            missing = job.get("model") or job.get("download_models") or []
-            if isinstance(missing, str):
-                missing = [missing]
-
+            missing = job.get("download_models", [])
             print("[MODEL DOWNLOAD REQUIRED]", missing)
-
-            if self.downloader.download_missing_models(missing):
-                print("🔄 Reinitializing worker after model downloads...")
-                self.worker_login()
-
-            time.sleep(1)
+            self.downloader.download_missing_models(missing)
+            self.worker_login()
             return
 
-        # ---------------------------------------------------------
-        # 6. Missing LoRAs
-        # ---------------------------------------------------------
         if resp.status_code == 202:
             missing = job.get("download_loras", [])
             print("[LORA DOWNLOAD REQUIRED]", missing)
-
-            if self.downloader.download_missing_loras(missing):
-                print("🔄 Reinitializing worker after LORA downloads...")
-                self.worker_login()
-
-            time.sleep(1)
+            self.downloader.download_missing_loras(missing)
+            self.worker_login()
             return
 
-        # ---------------------------------------------------------
-        # 7. No jobs
-        # ---------------------------------------------------------
+        # NO JOBS
         if resp.status_code == 500:
             print("[QUEUE EMPTY] No Jobs Found")
             time.sleep(2)
             return
 
-        # ---------------------------------------------------------
-        # 8. Server unavailable
-        # ---------------------------------------------------------
-        if resp.status_code == 400:
-            print("Unable to connect to server, retrying shortly!")
-            self.worker_login()
-            time.sleep(5)
-            return
-
-        # ---------------------------------------------------------
-        # 9. Unexpected status
-        # ---------------------------------------------------------
+        # SERVER ERROR
         if resp.status_code != 200:
             print(f"[JOB ERROR] Unexpected status {resp.status_code}: {resp.text}")
             time.sleep(2)
             return
 
-        # ---------------------------------------------------------
-        # 10. Valid job
-        # ---------------------------------------------------------
-        if not job or "job_id" not in job:
+        # VALID JOB
+        if "job_id" not in job:
             print("[JOB] No job available. Waiting...")
             time.sleep(2)
             return
 
-        job_id = job.get("job_id")
+        job_id = job["job_id"]
         job_type = job.get("request_type") or job.get("job_type")
         print(f"[JOB] Received job {job_id} ({job_type})")
 
-        # ---------------------------------------------------------
-        # 11. Route job
-        # ---------------------------------------------------------
+        # ROUTE JOB
         if job_type == "generate":
             self.router.handle_generate(job, self.worker_id)
         elif job_type == "img2img":
@@ -1771,9 +1743,36 @@ class WorkerApp:
             self.router.handle_facefix(job, self.worker_id)
         elif job_type == "img2vid":
             self.router.handle_img2vid(job, self.worker_id)
-        else:
-            print(f"[JOB ERROR] Unknown job type '{job_type}' — skipping")
-            time.sleep(1)
+
+    # ---------------------------------------------------------
+    # MAIN LOOP
+    # ---------------------------------------------------------
+    def main_loop(self):
+        if self.is_gpu_idle(self.config.gpu_id_setting) and self.gpu_idle_timer > 0:
+            self.gpu_idle_timer -= self.config.polling_interval
+            print(f"[GPU] Time remaining until idle: {self.gpu_idle_timer} seconds")
+        elif self.gpu_idle_timer <= 0:
+            self.get_job()
+
+        self.worker_main_loop = Timer(self.config.polling_interval, self.main_loop)
+        self.worker_main_loop.daemon = True
+        self.worker_main_loop.start()
+
+    # ---------------------------------------------------------
+    # RUN
+    # ---------------------------------------------------------
+    def run(self):
+        self.worker_login()
+        self.main_loop()
+
+        try:
+            while True:
+                time.sleep(1)
+        except KeyboardInterrupt:
+            print("[MAIN] Shutting down worker...")
+            if self.worker_main_loop:
+                self.worker_main_loop.cancel()
+            self.uploader.stop_progress_thread()
 
 
 # =========================
