@@ -26,9 +26,8 @@ import subprocess
 playwright_requests = Queue()
 playwright_results = {}
 
-print("IF YOU SEE THIS, IT UPDATED CORRECTLY")
-print("OK, THIS TIME IT ACTUALLY WORKED (hopefully!)")
-print("IM GOING TO CRY IF THIS DIDNT WORK")
+print("THERE SHOULD ONLY BE ONE MESSAGE NOW IF IT WORKED!")
+
 
 
 def playwright_resolver_loop():
