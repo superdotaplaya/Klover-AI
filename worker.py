@@ -26,7 +26,7 @@ import subprocess
 playwright_requests = Queue()
 playwright_results = {}
 
-
+print("IF YOU SEE THIS, IT UPDATED CORRECTLY")
 
 
 def playwright_resolver_loop():
