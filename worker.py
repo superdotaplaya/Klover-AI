@@ -1557,9 +1557,19 @@ class WorkerApp:
 
             print("[UPDATE] Restarting worker...")
 
-            python = sys.executable          # The real interpreter (python.exe, py.exe, venv, etc.)
-            args = [python] + sys.argv       # Interpreter + script + args
+            # Use the REAL interpreter Python is running under
+            python = sys.executable
 
+            # Use the REAL script path (absolute avoids drive/path confusion)
+            script = os.path.abspath(sys.argv[0])
+
+            # Rebuild the argument list EXACTLY as Python expects:
+            # argv[0] = interpreter
+            # argv[1] = script
+            # argv[2:] = original args
+            args = [python, script] + sys.argv[1:]
+
+            # Replace current process with new one
             os.execv(python, args)
 
         except Exception as e:
