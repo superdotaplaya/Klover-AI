@@ -28,6 +28,7 @@ playwright_results = {}
 
 print("IF YOU SEE THIS, IT UPDATED CORRECTLY")
 print("OK, THIS TIME IT ACTUALLY WORKED (hopefully!)")
+print("IM GOING TO CRY IF THIS DIDNT WORK")
 
 
 def playwright_resolver_loop():
