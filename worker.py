@@ -1553,10 +1553,12 @@ class WorkerApp:
             print(result.stdout)
 
             print("[UPDATE] Restarting worker...")
-            os.execv(sys.executable, [sys.executable] + sys.argv)
+            python_exe = sys.executable.replace("\\", "/")
+            os.execv(python_exe, [python_exe] + sys.argv)
 
         except Exception as e:
-            print(f"[UPDATE] Failed to update: {e}")
+            python_exe = sys.executable
+            os.execv(python_exe, [python_exe] + sys.argv)
 
     # ---------------------------------------------------------
     # GPU CHECK
