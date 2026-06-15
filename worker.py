@@ -1555,11 +1555,8 @@ class WorkerApp:
 
             print("[UPDATE] Restarting worker...")
 
-            # Reuse the exact interpreter and exact arguments the user used
-            python = sys.executable
-            args = [python] + sys.argv
-
-            os.execv(python, args)
+            # Reuse EXACT command user used to launch the worker
+            os.execv(sys.argv[0], sys.argv)
 
         except Exception as e:
             print(f"[UPDATE] Failed to update: {e}")
