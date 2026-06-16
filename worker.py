@@ -26,7 +26,7 @@ import subprocess
 playwright_requests = Queue()
 playwright_results = {}
 
-print("Restart test 3 6/16/2026")
+print("Restart testing skip ui option 6/16/2026")
 
 
 
