@@ -26,7 +26,7 @@ import subprocess
 playwright_requests = Queue()
 playwright_results = {}
 
-print("THERE SHOULD ONLY BE ONE MESSAGE NOW IF IT WORKED!")
+print("Restart test 6/16/2026")
 
 
 
