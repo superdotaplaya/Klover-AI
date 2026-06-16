@@ -1554,9 +1554,9 @@ class WorkerApp:
             )
             print(result.stdout)
 
-            print("[UPDATE] Restarting worker...")
-            print(sys.executable, [sys.executable] + sys.argv)
-            os.execv(sys.executable, sys.argv)
+            args = [sys.executable, sys.argv[0], *sys.argv[1:]]
+            subprocess.Popen(args, cwd=os.path.dirname(os.path.abspath(sys.argv[0])))
+            sys.exit(0)
 
         except Exception as e:
             print(f"[UPDATE] Failed to update: {e}")
