@@ -6,3 +6,5 @@ worker_auth.json
 checkpoints.json
 
 loras.json
+
+start_worker.bat

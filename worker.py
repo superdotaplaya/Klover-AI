@@ -335,12 +335,19 @@ class WorkerConfig:
 
             try:
                 self.save_to_disk()
-                messagebox.showinfo("Saved", "Settings saved successfully.")
+                if "--no-ui" not in sys.argv:
+                    messagebox.showinfo("Saved", "Settings saved successfully.")
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to save settings:\n{e}")
 
         ttk.Button(frm, text="Save Settings", command=save_and_update).grid(column=1, row=row, sticky="w")
         row += 1
+
+        if "--no-ui" in sys.argv:
+            save_and_update()
+            root.destroy()
+            app = app_factory(self)
+            app.run()
 
         # Start Worker
         def start_worker():
@@ -1554,7 +1561,7 @@ class WorkerApp:
             )
             print(result.stdout)
 
-            args = [sys.executable, sys.argv[0], *sys.argv[1:]]
+            args = [sys.executable, sys.argv[0], *sys.argv[1:], "--no-ui"]
             subprocess.Popen(args, cwd=os.path.dirname(os.path.abspath(sys.argv[0])))
             sys.exit(0)
 
