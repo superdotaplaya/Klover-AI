@@ -1556,7 +1556,7 @@ class WorkerApp:
 
             print("[UPDATE] Restarting worker...")
             print(sys.executable, [sys.executable] + sys.argv)
-            os.execv(sys.executable, [sys.executable] + sys.argv)
+            os.execv(sys.executable, sys.argv)
 
         except Exception as e:
             print(f"[UPDATE] Failed to update: {e}")
