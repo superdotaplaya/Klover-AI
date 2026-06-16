@@ -1408,7 +1408,7 @@ class JobRouter:
         # ---------------------------------------------------------
         workflow["52"]["inputs"]["image"] = filename
         workflow["90"]["inputs"]["text"] = prompt
-        workflow["50"]["inputs"]["length"] = int(cfg_scale)*32
+        workflow["50"]["inputs"]["length"] = int(cfg_scale)*16
 
 
         # ---------------------------------------------------------
