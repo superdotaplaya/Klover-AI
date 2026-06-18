@@ -1054,155 +1054,155 @@ class JobRouter:
 
     
 
-def handle_generate(self, job: Dict[str, Any], worker_id: str):
-    job_id = job.get("job_id")
-
-    # -----------------------------
-    # Timeout flag
-    # -----------------------------
-    timed_out = {"value": False}
-
-    def timeout_watchdog():
-        time.sleep(600)  # 10 minutes
-        timed_out["value"] = True
-        print(f"[TIMEOUT] Job {job_id} exceeded 5 minutes — cancelling")
-        self.uploader.cancel_job(job_id)
-
-    # Start watchdog thread
-    threading.Thread(target=timeout_watchdog, daemon=True).start()
-
-    try:
-        # -----------------------------
-        # Your existing code (unchanged)
-        # -----------------------------
-        channel_id = job.get("channel")
-        prompt = job.get("requested_prompt") or ""
-        neg_prompt = job.get("negative_prompt") or ""
-        resolution = job.get("resolution")
-        batch_size = int(job.get("batch_size", 1))
-        cfg_scale = job.get("config_scale") or 7
-        steps = job.get("steps") or 20
-        requester = job.get("requester") or ""
-        sampler = job.get("sampler") or "DPM++ 2M Karras"
-        clip_skip = int(job.get("clip_skip") or 1)
-        face_fix = job.get("face_fix")
-        hires_fix = job.get("hires_fix")
-        model_hash = job.get("model") or ""
-
-        model_map = self.hash_db.load_checkpoint_map()
-        entry = model_map.get(model_hash)
-        if not entry:
-            raise ValueError(f"Unknown model hash: {model_hash}")
-
-        filename = entry["filename"]
-        base_model = entry["base_model"].lower()
-
-        is_anima = (base_model == "anima")
-        is_flux = (base_model == "flux")
-        is_sdxl = (base_model == "sdxl")
-        is_sd15 = (base_model == "sd 1.5")
-
-        anima_modules = []
-        if is_anima:
-            anima_modules = [
-                self.config.anima_text_encoder_path,
-                self.config.anima_vae_path
-            ]
-
-        prompt = self.forge.lora_conversion(prompt)
-        width, height = self._parse_resolution(resolution)
-
-        payload = {
-            "prompt": prompt,
-            "negative_prompt": neg_prompt,
-            "sampler_index": sampler,
-            "steps": steps,
-            "cfg_scale": cfg_scale,
-            "batch_size": batch_size,
-            "width": width,
-            "height": height,
-            "sd_model_checkpoint": filename.replace(".safetensors", ""),
-            "model": filename.replace(".safetensors", ""),
-            "enable_hr": self.forge.str_to_bool(hires_fix),
-            "hr_scale": 1.5,
-            "hr_second_pass_steps": 15,
-            "denoising_strength": 0.4,
-            "hr_upscaler": "ESRGAN_4x",
-            "hr_additional_modules": [],
-            "alwayson_scripts": {
-                "ADetailer": {
-                    "args": [
-                        self.forge.str_to_bool(face_fix),
-                        self.forge.str_to_bool(face_fix),
-                        {
-                            "ad_model": "face_yolov8s.pt",
-                            "ad_prompt": prompt,
-                            "ad_negative_prompt": neg_prompt,
-                            "ad_confidence": 0.3,
-                            "ad_mask_blur": 4,
-                            "ad_denoising_strength": 0.4,
-                            "ad_inpaint_only_masked": True,
-                            "ad_inpaint_only_masked_padding": 32,
-                        },
-                    ]
-                }
-            },
-            "clip_skip": clip_skip,
-            "save_images": True,
-            "filter_nsfw": False,
-        }
-
-        if is_anima:
-            payload["hr_additional_modules"] = anima_modules
-            payload["scheduler"] = "Beta"
-        else:
-            payload["scheduler"] = "Automatic"
-
-        self.forge.set_model_option(filename.replace(".safetensors", ""), is_anima)
-        self.uploader.start_progress_thread(job_id)
+    def handle_generate(self, job: Dict[str, Any], worker_id: str):
+        job_id = job.get("job_id")
 
         # -----------------------------
-        # Run Forge (may timeout)
+        # Timeout flag
         # -----------------------------
-        r_json = self.forge.forge_txt2img(payload)
+        timed_out = {"value": False}
 
-        # If timeout already triggered, stop here
-        if timed_out["value"]:
-            return
+        def timeout_watchdog():
+            time.sleep(600)  # 10 minutes
+            timed_out["value"] = True
+            print(f"[TIMEOUT] Job {job_id} exceeded 5 minutes — cancelling")
+            self.uploader.cancel_job(job_id)
 
-        # -----------------------------
-        # Extract images
-        # -----------------------------
-        images = []
-        raw_images = r_json.get("images", [])
+        # Start watchdog thread
+        threading.Thread(target=timeout_watchdog, daemon=True).start()
 
-        for i, img_b64 in enumerate(raw_images[1:], start=1):
-            img_data = base64.b64decode(img_b64.split(",", 1)[-1])
-            outname = f"{job_id}_{i}.png"
-            outpath = os.path.join(self.config.output_directory, outname)
-            os.makedirs(self.config.output_directory, exist_ok=True)
-            with open(outpath, "wb") as f:
-                f.write(img_data)
-            with open(outpath, "rb") as f:
-                images.append((outname, f.read()))
+        try:
+            # -----------------------------
+            # Your existing code (unchanged)
+            # -----------------------------
+            channel_id = job.get("channel")
+            prompt = job.get("requested_prompt") or ""
+            neg_prompt = job.get("negative_prompt") or ""
+            resolution = job.get("resolution")
+            batch_size = int(job.get("batch_size", 1))
+            cfg_scale = job.get("config_scale") or 7
+            steps = job.get("steps") or 20
+            requester = job.get("requester") or ""
+            sampler = job.get("sampler") or "DPM++ 2M Karras"
+            clip_skip = int(job.get("clip_skip") or 1)
+            face_fix = job.get("face_fix")
+            hires_fix = job.get("hires_fix")
+            model_hash = job.get("model") or ""
 
-        # -----------------------------
-        # Upload results
-        # -----------------------------
-        self.uploader.submit_results(
-            images,
-            batch_size,
-            channel_id,
-            requester,
-            job_id,
-            prompt,
-            filename,
-            worker_id,
-        )
+            model_map = self.hash_db.load_checkpoint_map()
+            entry = model_map.get(model_hash)
+            if not entry:
+                raise ValueError(f"Unknown model hash: {model_hash}")
 
-    except Exception as e:
-        print(f"[ERROR] Job {job_id} failed: {e}")
-        return()
+            filename = entry["filename"]
+            base_model = entry["base_model"].lower()
+
+            is_anima = (base_model == "anima")
+            is_flux = (base_model == "flux")
+            is_sdxl = (base_model == "sdxl")
+            is_sd15 = (base_model == "sd 1.5")
+
+            anima_modules = []
+            if is_anima:
+                anima_modules = [
+                    self.config.anima_text_encoder_path,
+                    self.config.anima_vae_path
+                ]
+
+            prompt = self.forge.lora_conversion(prompt)
+            width, height = self._parse_resolution(resolution)
+
+            payload = {
+                "prompt": prompt,
+                "negative_prompt": neg_prompt,
+                "sampler_index": sampler,
+                "steps": steps,
+                "cfg_scale": cfg_scale,
+                "batch_size": batch_size,
+                "width": width,
+                "height": height,
+                "sd_model_checkpoint": filename.replace(".safetensors", ""),
+                "model": filename.replace(".safetensors", ""),
+                "enable_hr": self.forge.str_to_bool(hires_fix),
+                "hr_scale": 1.5,
+                "hr_second_pass_steps": 15,
+                "denoising_strength": 0.4,
+                "hr_upscaler": "ESRGAN_4x",
+                "hr_additional_modules": [],
+                "alwayson_scripts": {
+                    "ADetailer": {
+                        "args": [
+                            self.forge.str_to_bool(face_fix),
+                            self.forge.str_to_bool(face_fix),
+                            {
+                                "ad_model": "face_yolov8s.pt",
+                                "ad_prompt": prompt,
+                                "ad_negative_prompt": neg_prompt,
+                                "ad_confidence": 0.3,
+                                "ad_mask_blur": 4,
+                                "ad_denoising_strength": 0.4,
+                                "ad_inpaint_only_masked": True,
+                                "ad_inpaint_only_masked_padding": 32,
+                            },
+                        ]
+                    }
+                },
+                "clip_skip": clip_skip,
+                "save_images": True,
+                "filter_nsfw": False,
+            }
+
+            if is_anima:
+                payload["hr_additional_modules"] = anima_modules
+                payload["scheduler"] = "Beta"
+            else:
+                payload["scheduler"] = "Automatic"
+
+            self.forge.set_model_option(filename.replace(".safetensors", ""), is_anima)
+            self.uploader.start_progress_thread(job_id)
+
+            # -----------------------------
+            # Run Forge (may timeout)
+            # -----------------------------
+            r_json = self.forge.forge_txt2img(payload)
+
+            # If timeout already triggered, stop here
+            if timed_out["value"]:
+                return
+
+            # -----------------------------
+            # Extract images
+            # -----------------------------
+            images = []
+            raw_images = r_json.get("images", [])
+
+            for i, img_b64 in enumerate(raw_images[1:], start=1):
+                img_data = base64.b64decode(img_b64.split(",", 1)[-1])
+                outname = f"{job_id}_{i}.png"
+                outpath = os.path.join(self.config.output_directory, outname)
+                os.makedirs(self.config.output_directory, exist_ok=True)
+                with open(outpath, "wb") as f:
+                    f.write(img_data)
+                with open(outpath, "rb") as f:
+                    images.append((outname, f.read()))
+
+            # -----------------------------
+            # Upload results
+            # -----------------------------
+            self.uploader.submit_results(
+                images,
+                batch_size,
+                channel_id,
+                requester,
+                job_id,
+                prompt,
+                filename,
+                worker_id,
+            )
+
+        except Exception as e:
+            print(f"[ERROR] Job {job_id} failed: {e}")
+            return()
 
     def handle_img2img(self, job: Dict[str, Any], worker_id: str):
         channel_id = job.get("channel")
