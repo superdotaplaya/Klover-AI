@@ -1063,7 +1063,7 @@ def handle_generate(self, job: Dict[str, Any], worker_id: str):
     timed_out = {"value": False}
 
     def timeout_watchdog():
-        time.sleep(300)  # 5 minutes
+        time.sleep(600)  # 10 minutes
         timed_out["value"] = True
         print(f"[TIMEOUT] Job {job_id} exceeded 5 minutes — cancelling")
         self.uploader.cancel_job(job_id)
