@@ -652,6 +652,7 @@ class CivitDownloader:
             print(f"[{type_name}] Registered {filename} → {h} → {base_model}")
 
         try:
+            requests.post(refresh_url, timeout = 60)
             self.worker.worker_login()
         except Exception as e:
             print(f"[{type_name}] ERROR reinitializing worker: {e}")
