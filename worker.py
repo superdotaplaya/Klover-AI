@@ -1056,6 +1056,7 @@ class JobRouter:
     
 
     def handle_generate(self, job: Dict[str, Any], worker_id: str):
+        timeout_event = threading.Event()
         job_id = job.get("job_id")
 
         # -----------------------------
@@ -1064,10 +1065,11 @@ class JobRouter:
         timed_out = {"value": False}
 
         def timeout_watchdog():
-            time.sleep(600)  # 10 minutes
-            timed_out["value"] = True
-            print(f"[TIMEOUT] Job {job_id} exceeded 5 minutes — cancelling")
-            self.uploader.cancel_job(job_id)
+            # Wait returns True if event is set (job finished)
+            # Wait returns False if timeout expires (job took too long)
+            if not timeout_event.wait(timeout=300):
+                print(f"[TIMEOUT] Job {job_id} exceeded 5 minutes — cancelling")
+                self.uploader.cancel_job(job_id)
 
         # Start watchdog thread
         threading.Thread(target=timeout_watchdog, daemon=True).start()
@@ -1139,7 +1141,7 @@ class JobRouter:
                                 "ad_model": "face_yolov8s.pt",
                                 "ad_prompt": prompt,
                                 "ad_negative_prompt": neg_prompt,
-                                "ad_confidence": 0.3,
+                                "ad_confidence": 0.7,
                                 "ad_mask_blur": 4,
                                 "ad_denoising_strength": 0.4,
                                 "ad_inpaint_only_masked": True,
@@ -1186,7 +1188,7 @@ class JobRouter:
                     f.write(img_data)
                 with open(outpath, "rb") as f:
                     images.append((outname, f.read()))
-
+            timeout_event.set()
             # -----------------------------
             # Upload results
             # -----------------------------
