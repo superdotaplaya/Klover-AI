@@ -703,7 +703,7 @@ class ForgeClient:
 
     @staticmethod
     def forge_txt2img(payload: Dict[str, Any]) -> Dict[str, Any]:
-        r = requests.post("http://127.0.0.1:7860/sdapi/v1/txt2img", json=payload, timeout=600)
+        r = requests.post("http://127.0.0.1:7860/sdapi/v1/txt2img", json=payload, timeout=650)
         r.raise_for_status()
         return r.json()
 
