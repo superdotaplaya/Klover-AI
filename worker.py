@@ -9,6 +9,7 @@ import sys
 import time
 import uuid
 from dataclasses import dataclass, asdict
+import threading
 from datetime import datetime
 from threading import Thread, Event, Timer
 from typing import List, Tuple, Dict, Any, Optional
@@ -1053,9 +1054,26 @@ class JobRouter:
 
     
 
-    def handle_generate(self, job: Dict[str, Any], worker_id: str):
+def handle_generate(self, job: Dict[str, Any], worker_id: str):
+    job_id = job.get("job_id")
+
+    # -----------------------------
+    # Timeout flag
+    # -----------------------------
+    timed_out = {"value": False}
+
+    def timeout_watchdog():
+        time.sleep(300)  # 5 minutes
+        timed_out["value"] = True
+        print(f"[TIMEOUT] Job {job_id} exceeded 5 minutes — cancelling")
+        self.uploader.cancel_job(job_id)
+
+    # Start watchdog thread
+    threading.Thread(target=timeout_watchdog, daemon=True).start()
+
+    try:
         # -----------------------------
-        # 1. Extract job fields
+        # Your existing code (unchanged)
         # -----------------------------
         channel_id = job.get("channel")
         prompt = job.get("requested_prompt") or ""
@@ -1064,7 +1082,6 @@ class JobRouter:
         batch_size = int(job.get("batch_size", 1))
         cfg_scale = job.get("config_scale") or 7
         steps = job.get("steps") or 20
-        job_id = job.get("job_id")
         requester = job.get("requester") or ""
         sampler = job.get("sampler") or "DPM++ 2M Karras"
         clip_skip = int(job.get("clip_skip") or 1)
@@ -1072,52 +1089,29 @@ class JobRouter:
         hires_fix = job.get("hires_fix")
         model_hash = job.get("model") or ""
 
-        # -----------------------------
-        # 2. Resolve model hash → filename + base_model
-        # -----------------------------
         model_map = self.hash_db.load_checkpoint_map()
         entry = model_map.get(model_hash)
-
         if not entry:
             raise ValueError(f"Unknown model hash: {model_hash}")
 
         filename = entry["filename"]
         base_model = entry["base_model"].lower()
 
-        # -----------------------------
-        # 3. Detect model type
-        # -----------------------------
         is_anima = (base_model == "anima")
         is_flux = (base_model == "flux")
         is_sdxl = (base_model == "sdxl")
         is_sd15 = (base_model == "sd 1.5")
 
-        print(f"[MODEL] {filename} → baseModel={base_model}")
-
-        # -----------------------------
-        # 4. ANIMA module injection
-        # -----------------------------
         anima_modules = []
         if is_anima:
             anima_modules = [
                 self.config.anima_text_encoder_path,
                 self.config.anima_vae_path
             ]
-            print("[ANIMA] Injecting ANIMA text encoders")
-        
-        # -----------------------------
-        # 5. Convert LoRA tags
-        # -----------------------------
-        prompt = self.forge.lora_conversion(prompt)
 
-        # -----------------------------
-        # 6. Parse resolution
-        # -----------------------------
+        prompt = self.forge.lora_conversion(prompt)
         width, height = self._parse_resolution(resolution)
 
-        # -----------------------------
-        # 7. Build payload
-        # -----------------------------
         payload = {
             "prompt": prompt,
             "negative_prompt": neg_prompt,
@@ -1127,10 +1121,8 @@ class JobRouter:
             "batch_size": batch_size,
             "width": width,
             "height": height,
-
             "sd_model_checkpoint": filename.replace(".safetensors", ""),
             "model": filename.replace(".safetensors", ""),
-
             "enable_hr": self.forge.str_to_bool(hires_fix),
             "hr_scale": 1.5,
             "hr_second_pass_steps": 15,
@@ -1155,38 +1147,31 @@ class JobRouter:
                     ]
                 }
             },
-
             "clip_skip": clip_skip,
             "save_images": True,
             "filter_nsfw": False,
         }
 
-        # -----------------------------
-        # 8. Inject ANIMA modules
-        # -----------------------------
         if is_anima:
             payload["hr_additional_modules"] = anima_modules
             payload["scheduler"] = "Beta"
         else:
             payload["scheduler"] = "Automatic"
 
-        # -----------------------------
-        # 9. Set model in Forge
-        # -----------------------------
-        self.forge.set_model_option(filename.replace(".safetensors", ""),is_anima)
-
-        # -----------------------------
-        # 10. Start progress tracking
-        # -----------------------------
+        self.forge.set_model_option(filename.replace(".safetensors", ""), is_anima)
         self.uploader.start_progress_thread(job_id)
 
         # -----------------------------
-        # 11. Run Forge
+        # Run Forge (may timeout)
         # -----------------------------
         r_json = self.forge.forge_txt2img(payload)
 
+        # If timeout already triggered, stop here
+        if timed_out["value"]:
+            return
+
         # -----------------------------
-        # 12. Extract images
+        # Extract images
         # -----------------------------
         images = []
         raw_images = r_json.get("images", [])
@@ -1202,7 +1187,7 @@ class JobRouter:
                 images.append((outname, f.read()))
 
         # -----------------------------
-        # 13. Upload results
+        # Upload results
         # -----------------------------
         self.uploader.submit_results(
             images,
@@ -1214,6 +1199,10 @@ class JobRouter:
             filename,
             worker_id,
         )
+
+    except Exception as e:
+        print(f"[ERROR] Job {job_id} failed: {e}")
+        return()
 
     def handle_img2img(self, job: Dict[str, Any], worker_id: str):
         channel_id = job.get("channel")
