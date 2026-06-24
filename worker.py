@@ -105,7 +105,7 @@ class WorkerConfigData:
 
     def __post_init__(self):
         if self.accepted_job_types is None:
-            self.accepted_job_types = ["generate", "facefix", "img2img", "upscale", "img2vid"]
+            self.accepted_job_types = ["generate", "facefix", "img2img", "upscale", "img2vid", "ltx"]
 
 
 class WorkerConfig:
@@ -287,13 +287,14 @@ class WorkerConfig:
 
         # Job Types
         ttk.Label(frm, text="Acceptable Job Types:").grid(column=0, row=row, sticky="nw")
-        job_options = ["txt2img", "upscale", "face fix", "img2img", "img2vid"]
+        job_options = ["txt2img", "upscale", "face fix", "img2img", "img2vid", "ltx"]
         label_to_internal = {
             "txt2img": "generate",
             "upscale": "upscale",
             "face fix": "facefix",
             "img2img": "img2img",
             "img2vid": "img2vid",
+            "ltx": "ltx",
         }
         job_listbox = tk.Listbox(frm, selectmode="multiple", height=len(job_options), exportselection=False)
         for opt in job_options:
@@ -1500,6 +1501,144 @@ class JobRouter:
             print(f"[IMG2VID] Failed to upload mp4: {e}")
             self.uploader.stop_progress_thread()
 
+    def handle_ltx(self, job: Dict[str, Any], worker_id: str):
+        channel_id = job.get("channel")
+        prompt = job.get("requested_prompt") or ""
+        job_id = job.get("job_id")
+        requester = job.get("requester") or ""
+        cfg_scale = job.get("config_scale") or 7
+        image_link = job.get("image_link")
+
+        if not image_link:
+            print("[IMG2VID] No image_link provided.")
+            return
+
+        # ---------------------------------------------------------
+        # 1. Download image → save to ComfyUI input directory
+        # ---------------------------------------------------------
+        comfy_input_dir = self.config.comfy_input_directory
+        os.makedirs(comfy_input_dir, exist_ok=True)
+
+        filename = f"{job_id}_input.png"
+        full_path = os.path.join(comfy_input_dir, filename)
+
+        try:
+            img_resp = requests.get(image_link, timeout=30)
+            img_resp.raise_for_status()
+            with open(full_path, "wb") as f:
+                f.write(img_resp.content)
+            print(f"[IMG2VID] Saved input image to {full_path}")
+        except Exception as e:
+            print(f"[IMG2VID] Failed to download input image: {e}")
+            return
+
+        # ---------------------------------------------------------
+        # 2. Load workflow JSON
+        # ---------------------------------------------------------
+        try:
+            with open("Klover_ltx.json", "r", encoding="utf-8") as f:
+                workflow = json.load(f)
+        except Exception as e:
+            print(f"[IMG2VID] Failed to load workflow JSON: {e}")
+            return
+
+        # ---------------------------------------------------------
+        # 3. Inject values into workflow
+        # ---------------------------------------------------------
+        workflow["269"]["inputs"]["image"] = filename
+        workflow["320:319"]["inputs"]["value"] = prompt
+        workflow["320:301"]["inputs"]["value"] = int(cfg_scale)
+
+
+        # ---------------------------------------------------------
+        # 4. Send workflow to ComfyUI
+        # ---------------------------------------------------------
+        payload = {
+            "prompt": workflow,
+            "client_id": "klover_worker",
+            "output_node": "77"
+        }
+
+        self.uploader.start_progress_thread(job_id)
+
+        try:
+            resp = requests.post(
+                "http://127.0.0.1:8188/prompt",
+                json=payload,
+                timeout=10
+            )
+            resp.raise_for_status()
+        except Exception as e:
+            print(f"[IMG2VID] Failed to send workflow to ComfyUI: {e}")
+            self.uploader.stop_progress_thread()
+            return
+
+        prompt_id = resp.json().get("prompt_id")
+        print(f"[IMG2VID] Prompt ID: {prompt_id}")
+
+        # ---------------------------------------------------------
+        # 5. Poll for completion
+        # ---------------------------------------------------------
+        while True:
+            time.sleep(1)
+            try:
+                hist = requests.get(f"http://127.0.0.1:8188/history/{prompt_id}").json()
+                if prompt_id in hist and "outputs" in hist[prompt_id]:
+                    break
+            except Exception:
+                pass
+
+        # ---------------------------------------------------------
+        # 6. Find most recent .mp4 in ComfyUI output directory
+        # ---------------------------------------------------------
+        output_dir = self.config.comfy_output_directory
+        print(f"[IMG2VID] Scanning output directory: {output_dir}")
+
+        latest_mp4 = None
+        latest_time = 0
+
+        for root, dirs, files in os.walk(output_dir):
+            for file in files:
+                if file.lower().endswith(".mp4"):
+                    full_path = os.path.join(root, file)
+                    mtime = os.path.getmtime(full_path)
+                    print(f"[IMG2VID] Found mp4: {full_path} (mtime={mtime})")
+
+                    if mtime > latest_time:
+                        latest_time = mtime
+                        latest_mp4 = full_path
+
+        if not latest_mp4:
+            print("[IMG2VID] ERROR: No mp4 files found in output directory!")
+            print("[IMG2VID] Double-check this path:", output_dir)
+            self.uploader.stop_progress_thread()
+            return
+
+        print(f"[IMG2VID] Using most recent mp4: {latest_mp4}")
+
+        # ---------------------------------------------------------
+        # 7. Upload results
+        # ---------------------------------------------------------
+        try:
+            with open(latest_mp4, "rb") as f:
+                video_bytes = f.read()
+
+            images = [(os.path.basename(latest_mp4), video_bytes)]
+
+            self.uploader.submit_results(
+                images,
+                len(images),
+                channel_id,
+                requester,
+                job_id,
+                prompt,
+                "img2vid",
+                worker_id,
+            )
+
+        except Exception as e:
+            print(f"[IMG2VID] Failed to upload mp4: {e}")
+            self.uploader.stop_progress_thread()
 
 # =========================
 # WORKER LOOP / LOGIN / JOBS
@@ -1745,6 +1884,8 @@ class WorkerApp:
             self.router.handle_facefix(job, self.worker_id)
         elif job_type == "img2vid":
             self.router.handle_img2vid(job, self.worker_id)
+        elif job_type == "ltx":
+            self.router.handle_ltx(job, self.worker_id)
 
     # ---------------------------------------------------------
     # MAIN LOOP

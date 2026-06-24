@@ -58,7 +58,10 @@
         "64",
         2
       ],
-      "length": 105,
+      "length": [
+        "147",
+        0
+      ],
       "batch_size": 1,
       "positive": [
         "90",
@@ -88,7 +91,7 @@
   },
   "52": {
     "inputs": {
-      "image": "00112-2778136699.png"
+      "image": "00120-1952809756.png"
     },
     "class_type": "LoadImage",
     "_meta": {
@@ -160,7 +163,7 @@
   "58": {
     "inputs": {
       "add_noise": "disable",
-      "noise_seed": 285953983466024,
+      "noise_seed": 873082139029986,
       "steps": 8,
       "cfg": 1,
       "sampler_name": "euler_ancestral",
@@ -309,7 +312,7 @@
   },
   "89": {
     "inputs": {
-      "text": "Anime-style video of a cute, young woman with green hair and cat ears, sitting on a white couch in a bright, sunny living room. She has a playful expression, with her mouth open and eyes wide. She is wearing a lime green cropped hoodie with a lemon slice design on the front, paired with short denim shorts. The background features a potted plant and a framed picture on the wall. The lighting is soft and natural, creating a cozy atmosphere. The style is vibrant and detailed, with a focus on the character's playful and confident pose.She takes off her top revealing her naked breasts",
+      "text": "Anime-style video of a cute girl with green hair and cat ears, sitting on a bed with her legs spread apart. She is wearing a lime green cropped sweatshirt with a lemon slice design on the front, paired with short denim shorts. She has a playful expression, with her eyes looking directly at the viewer. The background is dark and minimalistic, with a soft focus. The style is vibrant and detailed, with a focus on the character's playful and mischievous demeanor.She takes off her top revealing her naked breasts",
       "anything": [
         "84",
         0
@@ -419,7 +422,7 @@
       "num_beams": 3,
       "do_sample": true,
       "output_mask_select": "",
-      "seed": 99345173435958,
+      "seed": 870619219602674,
       "image": [
         "52",
         0
@@ -491,7 +494,7 @@
     "inputs": {
       "frame_rate": 32,
       "loop_count": 0,
-      "filename_prefix": "Video/2025-12-02/163156",
+      "filename_prefix": "Video/163156",
       "format": "video/nvenc_hevc-mp4",
       "pix_fmt": "p010le",
       "bitrate": 20,
@@ -507,6 +510,41 @@
     "class_type": "VHS_VideoCombine",
     "_meta": {
       "title": "Video Combine 🎥🅥🅗🅢"
+    }
+  },
+  "147": {
+    "inputs": {
+      "value": 105
+    },
+    "class_type": "PrimitiveInt",
+    "_meta": {
+      "title": "Int"
+    }
+  },
+  "148": {
+    "inputs": {
+      "expression": "(a * b)/32",
+      "values.a": [
+        "147",
+        0
+      ],
+      "values.b": [
+        "149",
+        0
+      ]
+    },
+    "class_type": "ComfyMathExpression",
+    "_meta": {
+      "title": "Math Expression"
+    }
+  },
+  "149": {
+    "inputs": {
+      "value": 2
+    },
+    "class_type": "PrimitiveInt",
+    "_meta": {
+      "title": "Int"
     }
   }
 }
