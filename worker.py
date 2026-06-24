@@ -1548,7 +1548,7 @@ class JobRouter:
         workflow["269"]["inputs"]["image"] = filename
         workflow["320:319"]["inputs"]["value"] = prompt
         workflow["320:301"]["inputs"]["value"] = int(cfg_scale)
-
+        workflow["320:277"]["inputs"]["noise_seed"] = f"{random.randint(0, 99999999999999):014d}"
 
         # ---------------------------------------------------------
         # 4. Send workflow to ComfyUI
