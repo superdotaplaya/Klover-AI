@@ -27,7 +27,7 @@ import subprocess
 playwright_requests = Queue()
 playwright_results = {}
 
-print("Restart testing skip ui option 6/16/2026")
+print("Krea 2 Support added!")
 
 
 
@@ -102,6 +102,8 @@ class WorkerConfigData:
     aria2_path: str = ""
     anima_text_encoder_path: str = ""
     anima_vae_path: str = ""
+    krea2_text_encoder_path: str = ""
+    krea2_vae_path: str = ""
 
     def __post_init__(self):
         if self.accepted_job_types is None:
@@ -249,6 +251,22 @@ class WorkerConfig:
         ttk.Button(frm, text="Browse", command=lambda: pick_file(anima_vae_entry, [("SafeTensor", "*.safetensors"), ("All", "*.*")])).grid(column=2, row=row)
         row += 1
 
+        # Krea2 Text Encoder
+        ttk.Label(frm, text="Krea2 Text Encoder Path:").grid(column=0, row=row, sticky="w")
+        krea2_text_entry = ttk.Entry(frm, width=80)
+        krea2_text_entry.insert(0, d.krea2_text_encoder_path)
+        krea2_text_entry.grid(column=1, row=row, sticky="w")
+        ttk.Button(frm, text="Browse", command=lambda: pick_file(krea2_text_entry, [("SafeTensor", "*.safetensors"), ("All", "*.*")])).grid(column=2, row=row)
+        row += 1
+
+        # Krea2 VAE
+        ttk.Label(frm, text="Krea2 VAE Path:").grid(column=0, row=row, sticky="w")
+        krea2_vae_entry = ttk.Entry(frm, width=80)
+        krea2_vae_entry.insert(0, d.krea2_vae_path)
+        krea2_vae_entry.grid(column=1, row=row, sticky="w")
+        ttk.Button(frm, text="Browse", command=lambda: pick_file(krea2_vae_entry, [("SafeTensor", "*.safetensors"), ("All", "*.*")])).grid(column=2, row=row)
+        row += 1
+
         # Output Directory
         ttk.Label(frm, text="Image Output Directory:").grid(column=0, row=row, sticky="w")
         out_dir_entry = ttk.Entry(frm, width=80)
@@ -334,6 +352,8 @@ class WorkerConfig:
             d.auto_dl_checkpoints = auto_dl_checkpoints_var.get()
             d.anima_text_encoder_path = anima_text_entry.get().strip()
             d.anima_vae_path = anima_vae_entry.get().strip()
+            d.krea2_text_encoder_path = krea2_text_entry.get().strip()
+            d.krea2_vae_path = krea2_vae_entry.get().strip()
 
             try:
                 self.save_to_disk()
@@ -727,23 +747,29 @@ class ForgeClient:
         print("[IMG2VID] Stub called. No actual img2vid endpoint implemented.")
         return {"images": []}
 
-    def set_model_option(self, model: str, is_anima: bool):
+    def set_model_option(self, model: str, is_anima: bool, is_krea2: bool):
         opts_url = "http://127.0.0.1:7860/sdapi/v1/options"
-        if is_anima:
-         
-            requests.post(opts_url, json={
-                "sd_model_checkpoint": self.convert_model_hash(model),
-                "forge_additional_modules": [
-                    self.config.anima_text_encoder_path,
-                    self.config.anima_vae_path
-                ]
-            }, timeout=10)
 
-        else:
-            try:
-                requests.post(opts_url, json={"sd_model_checkpoint": self.convert_model_hash(model), "forge_additional_modules": []}, timeout=10)
-            except Exception as e:
-                print(f"[FORGE] Failed to set model option: {e}")
+        modules = []
+
+        if is_anima:
+            if self.config.anima_text_encoder_path:
+                modules.append(self.config.anima_text_encoder_path)
+            if self.config.anima_vae_path:
+                modules.append(self.config.anima_vae_path)
+
+        if is_krea2:
+            if self.config.krea2_text_encoder_path:
+                modules.append(self.config.krea2_text_encoder_path)
+            if self.config.krea2_vae_path:
+                modules.append(self.config.krea2_vae_path)
+
+        print("FINAL MODULE LIST:", modules)
+
+        requests.post(opts_url, json={
+            "sd_model_checkpoint": self.convert_model_hash(model),
+            "forge_additional_modules": modules
+        }, timeout=10)
 
 
 # =========================
@@ -1105,14 +1131,20 @@ class JobRouter:
             is_flux = (base_model == "flux")
             is_sdxl = (base_model == "sdxl")
             is_sd15 = (base_model == "sd 1.5")
+            is_krea2 = (base_model == "krea 2")
 
             anima_modules = []
+            krea2_modules = []
             if is_anima:
                 anima_modules = [
                     self.config.anima_text_encoder_path,
                     self.config.anima_vae_path
                 ]
-
+            elif is_krea2:
+                krea2_modules = [
+                    self.config.krea2_text_encoder_path,
+                    self.config.krea2_vae_path
+                    ]
             prompt = self.forge.lora_conversion(prompt)
             width, height = self._parse_resolution(resolution)
 
@@ -1159,10 +1191,12 @@ class JobRouter:
             if is_anima:
                 payload["hr_additional_modules"] = anima_modules
                 payload["scheduler"] = "Beta"
+            elif is_krea2:
+                payload["hr_additional_modules"] = krea2_modules
             else:
                 payload["scheduler"] = "Automatic"
 
-            self.forge.set_model_option(filename.replace(".safetensors", ""), is_anima)
+            self.forge.set_model_option(filename.replace(".safetensors", ""), is_anima, is_krea2)
             self.uploader.start_progress_thread(job_id)
 
             # -----------------------------
