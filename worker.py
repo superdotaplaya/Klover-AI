@@ -1184,7 +1184,7 @@ class JobRouter:
                     }
                 },
                 "clip_skip": clip_skip,
-                "save_images": True,
+                "save_images": False,
                 "filter_nsfw": False,
             }
 
@@ -1214,7 +1214,7 @@ class JobRouter:
             images = []
             raw_images = r_json.get("images", [])
 
-            for i, img_b64 in enumerate(raw_images[1:], start=1):
+            for i, img_b64 in enumerate(raw_images, start=1):
                 img_data = base64.b64decode(img_b64.split(",", 1)[-1])
                 outname = f"{job_id}_{i}.png"
                 outpath = os.path.join(self.config.output_directory, outname)
@@ -1222,7 +1222,7 @@ class JobRouter:
                 with open(outpath, "wb") as f:
                     f.write(img_data)
                 with open(outpath, "rb") as f:
-                    images.append((outname, f.read()))
+                    images.append(os.path.join(self.config.output_directory, outname))
             timeout_event.set()
             # -----------------------------
             # Upload results
