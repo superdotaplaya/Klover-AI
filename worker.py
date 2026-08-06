@@ -709,7 +709,7 @@ class ForgeClient:
         if not prompt:
             return prompt
         lora_map = self.hash_db.load_lora_map()
-        pattern = r"<\s*lora\s*:\s*([^:>\s]+)\s*:\s*([0-9.]+)\s*>"
+        pattern = r"<\s*lora\s*:\s*([^:>\s]+)\s*:\s*(-?[0-9.]+)\s*>"
 
         def repl(match):
             lora_hash = match.group(1).strip()
