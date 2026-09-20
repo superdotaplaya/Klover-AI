@@ -701,7 +701,6 @@ class ForgeClient:
         model_map = self.hash_db.load_checkpoint_map()
         filename = model_map.get(model_hash)
         if not filename:
-            print(f"[MODEL] No filename found for model hash {model_hash}")
             return model_hash
         return filename.replace(".safetensors", "").replace(".ckpt", "")
 
@@ -1097,9 +1096,23 @@ class JobRouter:
             if not timeout_event.wait(timeout=300):
                 print(f"[TIMEOUT] Job {job_id} exceeded 5 minutes — cancelling")
                 self.uploader.cancel_job(job_id)
+                timed_out = True
+                try:
+                    resp = requests.post(
+                        "http://127.0.0.1:7860/sdapi/v1/extra-single-image",
+                        json=payload,
+                        timeout=120
+                    )
+                    resp.raise_for_status()
+                    r_json = resp.json()
+                except Exception as e:
+                    print(f"[UPSCALE] Forge Neo upscale failed: {e}")
+                    self.uploader.stop_progress_thread()
+                    return
 
         # Start watchdog thread
         threading.Thread(target=timeout_watchdog, daemon=True).start()
+
 
         try:
             # -----------------------------
@@ -1196,7 +1209,9 @@ class JobRouter:
             else:
                 payload["scheduler"] = "Automatic"
 
+            self.uploader.current_model_name = filename
             self.forge.set_model_option(filename.replace(".safetensors", ""), is_anima, is_krea2)
+
             self.uploader.start_progress_thread(job_id)
 
             # -----------------------------
