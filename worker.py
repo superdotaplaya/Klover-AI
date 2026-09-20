@@ -574,7 +574,6 @@ class CivitDownloader:
 
         print(f"[DOWNLOAD FAILED] Could not download {filename}")
         return 
-
     def _download_by_hash_list(
         self,
         hash_list: List[str],
@@ -582,7 +581,7 @@ class CivitDownloader:
         model_dir: str,
         refresh_url: str,
         type_name: str,
-        ):
+    ):
         if not hash_list:
             print(f"[{type_name}] No missing {type_name.lower()}s provided.")
             return
@@ -617,18 +616,21 @@ class CivitDownloader:
                 print(f"[{type_name}] ERROR: No version ID for {h}")
                 continue
 
+            # -------------------------------------------------------
+            # FIXED MODEL FILE SELECTION
+            # -------------------------------------------------------
             files = info.get("files", [])
             target_file = None
 
             for f in files:
                 if f.get("type") == "Model":
-                    meta = f.get("metadata", {})
-                    if meta.get("format") == "SafeTensor":
+                    name = f.get("name", "").lower()
+                    if name.endswith(".safetensors"):
                         target_file = f
                         break
 
             if not target_file:
-                print(f"[{type_name}] ERROR: No SafeTensor file found for {h}")
+                print(f"[{type_name}] ERROR: No SafeTensor model file found for {h}")
                 continue
 
             file_id = target_file["id"]
@@ -638,16 +640,11 @@ class CivitDownloader:
             existing_path = os.path.join(model_dir, filename)
 
             # -------------------------------------------------------
-            # NEW LOGIC: If file exists, DO NOT download it.
-            # Query CivitAI for baseModel and register in DB.
+            # If file already exists, register it without downloading
             # -------------------------------------------------------
             if os.path.exists(existing_path):
                 print(f"[{type_name}] File already exists on disk: {filename}")
-                print(f"[{type_name}] Querying CivitAI for baseModel...")
-
                 base_model = self.civitai_get_base_model_from_hash(h)
-                print(f"[{type_name}] baseModel = {base_model}")
-
                 db["hashes"].append([h, filename, base_model])
 
                 with open(db_path, "w", encoding="utf-8") as f:
@@ -663,7 +660,6 @@ class CivitDownloader:
                 print(f"[{type_name}] ERROR: Failed to download {filename}")
                 continue
 
-            # After download, also record baseModel from CivitAI
             base_model = self.civitai_get_base_model_from_hash(h)
             db["hashes"].append([h, filename, base_model])
 
@@ -673,7 +669,7 @@ class CivitDownloader:
             print(f"[{type_name}] Registered {filename} → {h} → {base_model}")
 
         try:
-            requests.post(refresh_url, timeout = 60)
+            requests.post(refresh_url, timeout=60)
             self.worker.worker_login()
         except Exception as e:
             print(f"[{type_name}] ERROR reinitializing worker: {e}")
