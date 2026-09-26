@@ -862,20 +862,6 @@ class ResultUploader:
                 line(f"{CYAN}└──────────────────────────────────────────────────────────────┘{RESET}")
                 line("")  # spacer line
 
-                # Send progress to server
-                preview = data.get("current_image")
-                requests.post(
-                    self.config.progress_url,
-                    json={
-                        "job_id": job_id,
-                        "progress": progress,
-                        "status": "InProgress",
-                        "step": step,
-                        "total_steps": total_steps,
-                        "preview": preview,
-                    },
-                    timeout=5,
-                )
 
             except Exception as e:
                 print(f"[PROGRESS] Error: {e}")
